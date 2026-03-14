@@ -8,36 +8,35 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
-from aiogram.utils.markdown import hbold, hlink, hcode
+from aiogram.utils.markdown import hbold
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env (для локальной разработки)
+# Загружаем переменные окружения
 load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
-# Получаем токен и URL игры из окружения
+# Получаем токен и URL игры
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GAME_URL = os.getenv("GAME_URL", "https://skypulse.vercel.app")  # по умолчанию ваш Vercel
+GAME_URL = os.getenv("GAME_URL", "https://skypulse.vercel.app")
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN не задан! Установите переменную окружения.")
-    sys.exit(1)
+    # Вместо sys.exit выбрасываем исключение, чтобы Railway показал ошибку в логах
+    raise ValueError("BOT_TOKEN is not set")
 
-# Инициализация бота и диспетчера
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
+# Инициализация бота (без parse_mode в конструкторе!)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # ----------------------------------------------------------------------
-# Текст правил (оформлен в Markdown)
+# Текст правил (Markdown)
 # ----------------------------------------------------------------------
 RULES_TEXT = f"""
 {hbold('🌟 Добро пожаловать в SkyPulse: Пятый элемент! 🌟')}
@@ -75,7 +74,6 @@ RULES_TEXT = f"""
 # ----------------------------------------------------------------------
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    """Приветствие с кнопкой запуска игры."""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Играть в SkyPulse", web_app=WebAppInfo(url=GAME_URL))]
@@ -93,11 +91,10 @@ async def cmd_start(message: types.Message):
 # ----------------------------------------------------------------------
 @dp.message(Command("rules"))
 async def cmd_rules(message: types.Message):
-    """Отправляет правила игры."""
     await message.answer(RULES_TEXT, parse_mode=ParseMode.MARKDOWN)
 
 # ----------------------------------------------------------------------
-# Команда /game – просто кнопка для игры (дубль /start)
+# Команда /game – просто кнопка для игры
 # ----------------------------------------------------------------------
 @dp.message(Command("game"))
 async def cmd_game(message: types.Message):
@@ -113,28 +110,21 @@ async def cmd_game(message: types.Message):
 # ----------------------------------------------------------------------
 @dp.message()
 async def handle_webapp_data(message: types.Message):
-    """Принимает данные, отправленные из игры (score, level, wagons)."""
     if message.web_app_data:
         data = message.web_app_data.data
         user = message.from_user
         logger.info(f"Получены данные от {user.full_name} (id={user.id}): {data}")
-
-        # Здесь будет сохранение в базу данных (позже)
-        # Пока просто отвечаем подтверждением
+        # Здесь позже будет сохранение в БД
         await message.answer(
             f"✅ Результат получен! Спасибо за игру.\n"
             f"Твои данные: {data}\n\n"
             f"Скоро здесь появится таблица рекордов!"
         )
-    else:
-        # Игнорируем обычные сообщения
-        pass
 
 # ----------------------------------------------------------------------
 # Запуск бота
 # ----------------------------------------------------------------------
 async def main():
-    # Удаляем вебхук (на случай, если он был установлен ранее)
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("Бот запущен и готов к работе")
     await dp.start_polling(bot)
@@ -144,3 +134,6 @@ if __name__ == "__main__":
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         logger.info("Бот остановлен")
+    except Exception as e:
+        logger.exception("Критическая ошибка: %s", e)
+        raise
