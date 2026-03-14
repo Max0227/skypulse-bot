@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Получаем токен и URL игры
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GAME_URL = os.getenv("GAME_URL", "https://skypulse1.vercel.app/")
+GAME_URL = os.getenv("GAME_URL", "https://skypulse-rust.vercel.app/")
 
 if not BOT_TOKEN:
     logger.error("BOT_TOKEN не задан! Установите переменную окружения.")
