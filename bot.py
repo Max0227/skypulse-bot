@@ -10,6 +10,7 @@ from typing import Optional
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.filters import Command
+from aiogram.client.default import DefaultBotProperties
 from aiogram.types import (
     InlineKeyboardMarkup, InlineKeyboardButton,
     ReplyKeyboardMarkup, KeyboardButton,
@@ -18,7 +19,7 @@ from aiogram.types import (
 from aiogram.utils.markdown import hbold, hlink, hcode
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения
+# Загружаем переменные окружения из .env (для локальной разработки)
 load_dotenv()
 
 # Настройка логирования
@@ -29,16 +30,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Получаем токен и URL игры
+# Получаем токен и URL игры из окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-GAME_URL = os.getenv("GAME_URL", "https://skypulse.vercel.app")
+GAME_URL = os.getenv("GAME_URL", "https://skypulse.vercel.app")  # по умолчанию ваш Vercel
 
 if not BOT_TOKEN:
-    logger.error("BOT_TOKEN не задан!")
+    logger.error("BOT_TOKEN не задан! Установите переменную окружения.")
     sys.exit(1)
 
-# Инициализация бота и диспетчера
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
+# Инициализация бота и диспетчера с правильными параметрами для aiogram 3.7+
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.MARKDOWN))
 dp = Dispatcher()
 
 # ----------------------------------------------------------------------
@@ -130,7 +131,7 @@ def get_user_stats(user_id: int):
     return row
 
 # ----------------------------------------------------------------------
-# Текст правил (без изменений)
+# Текст правил (оформлен в Markdown)
 # ----------------------------------------------------------------------
 RULES_TEXT = f"""
 {hbold('🌟 Добро пожаловать в SkyPulse: Пятый элемент! 🌟')}
@@ -306,7 +307,7 @@ async def handle_webapp_data(message: types.Message):
 # Запуск бота
 # ----------------------------------------------------------------------
 async def main():
-    # Удаляем вебхук
+    # Удаляем вебхук (на случай, если он был установлен ранее)
     await bot.delete_webhook(drop_pending_updates=True)
     logger.info("Бот запущен и готов к работе")
     await dp.start_polling(bot)
