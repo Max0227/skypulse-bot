@@ -1,318 +1,1890 @@
-import asyncio
-import logging
-import os
-import sys
-import json
-import sqlite3
-from datetime import datetime
-from typing import Optional
+import Phaser from 'phaser';
 
-from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.filters import Command
-from aiogram.types import (
-    InlineKeyboardMarkup, InlineKeyboardButton,
-    ReplyKeyboardMarkup, KeyboardButton,
-    WebAppInfo
-)
-from aiogram.utils.markdown import hbold, hlink, hcode
-from dotenv import load_dotenv
+// =========================================================================
+// BootScene – создание всех текстур (без изменений, кроме добавления текстур для сердечек)
+// =========================================================================
+class BootScene extends Phaser.Scene {
+  constructor() {
+    super('boot');
+  }
 
-# Загружаем переменные окружения
-load_dotenv()
+  preload() {
+    // Загружаем звуки (добавлен звук покупки)
+    this.load.audio('coin_sound', 'sounds/coin.mp3');
+    this.load.audio('item_sound', 'sounds/item.mp3');
+    this.load.audio('tap_sound', 'sounds/tap.mp3');
+    this.load.audio('wagon_sound', 'sounds/wagon.mp3');
+    this.load.audio('level_up_sound', 'sounds/level_up.mp3');
+    this.load.audio('bg_music', 'sounds/fifth_element_theme.mp3');
+    this.load.audio('purchase_sound', 'sounds/purchase.mp3'); // новый звук
+    this.load.audio('revive_sound', 'sounds/revive.mp3');     // новый звук
+  }
 
-# Настройка логирования
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
+  create() {
+    this.createTextures();
+    this.scene.start('play');
+  }
 
-# Получаем токен и URL игры
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-GAME_URL = os.getenv("GAME_URL", "https://skypulse.vercel.app")
+  createTextures() {
+    const g = this.add.graphics();
 
-if not BOT_TOKEN:
-    logger.error("BOT_TOKEN не задан!")
-    sys.exit(1)
+    // ========== ИГРОК: ЛЕТАЮЩЕЕ ТАКСИ ==========
+    g.clear();
+    g.fillStyle(0xffcc00);
+    g.fillRoundedRect(12, 12, 56, 32, 8);
+    g.fillStyle(0xffaa00);
+    g.fillRoundedRect(20, 8, 40, 10, 4);
+    g.fillRect(56, 16, 8, 20);
+    g.fillStyle(0x88ccff);
+    g.fillRect(22, 16, 14, 8);
+    g.fillRect(40, 16, 14, 8);
+    g.fillStyle(0xffffff);
+    g.fillCircle(18, 28, 4);
+    g.fillStyle(0xffffaa);
+    g.fillCircle(18, 28, 2);
+    g.fillStyle(0x000000);
+    g.fillRect(40, 30, 6, 4);
+    g.fillRect(48, 30, 6, 4);
+    g.fillRect(56, 30, 6, 4);
+    g.fillStyle(0x333333);
+    g.fillRect(10, 34, 20, 6);
+    g.generateTexture('player', 80, 60);
 
-# Инициализация бота и диспетчера
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
-dp = Dispatcher()
+    // ========== ВАГОНЧИКИ ==========
+    const colors = [
+      0xffaa00, 0x44aa88, 0xaa44aa, 0x88aa44, 0xaa8844,
+      0x44aaff, 0xff66aa, 0x66ffaa, 0xaa66ff, 0xffaa66
+    ];
+    
+    for (let i = 0; i < colors.length; i++) {
+      g.clear();
+      g.fillStyle(colors[i]);
+      g.fillRoundedRect(6, 6, 36, 22, 6);
+      g.fillStyle(0x000000);
+      g.fillRect(12, 16, 6, 4);
+      g.fillRect(22, 16, 6, 4);
+      g.fillStyle(0xffffff);
+      g.fillRect(8, 8, 6, 4);
+      g.fillRect(20, 8, 6, 4);
+      g.fillStyle(0xffaa00);
+      g.fillCircle(12, 24, 3);
+      g.fillCircle(28, 24, 3);
+      g.fillStyle(0x000000, 0.2);
+      g.fillRect(6, 26, 36, 2);
+      g.generateTexture(`wagon_${i}`, 48, 34);
+    }
 
-# ----------------------------------------------------------------------
-# База данных SQLite
-# ----------------------------------------------------------------------
-DB_PATH = "skypulse.db"
+    // ========== КОЛОННЫ ==========
+    const createGate = (color, light, name) => {
+      g.clear();
+      g.fillStyle(color);
+      g.fillRoundedRect(0, 0, 100, 400, 20);
+      g.fillStyle(light);
+      g.fillRoundedRect(10, 0, 15, 400, 8);
+      g.fillStyle(light);
+      g.fillRoundedRect(0, 0, 100, 30, 12);
+      g.fillStyle(color);
+      g.fillRoundedRect(0, 370, 100, 30, 12);
+      g.generateTexture(name, 100, 400);
+    };
+    
+    createGate(0x0ea5e9, 0x67e8f9, 'gate_blue');
+    createGate(0x22c55e, 0x86efac, 'gate_green');
+    createGate(0xeab308, 0xfde047, 'gate_yellow');
+    createGate(0xef4444, 0xf87171, 'gate_red');
+    createGate(0xa855f7, 0xc084fc, 'gate_purple');
 
-def init_db():
-    """Создаёт таблицу users, если её нет."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
-            username TEXT,
-            first_name TEXT,
-            best_score INTEGER DEFAULT 0,
-            best_level INTEGER DEFAULT 0,
-            total_meters INTEGER DEFAULT 0,
-            total_coins INTEGER DEFAULT 0,
-            games_played INTEGER DEFAULT 0,
-            last_play DATE
-        )
-    """)
-    conn.commit()
-    conn.close()
+    // ========== МОНЕТКИ ==========
+    const createCoin = (color, lineColor, name) => {
+      g.clear();
+      g.fillStyle(color);
+      g.fillCircle(16, 16, 14);
+      g.lineStyle(4, lineColor);
+      g.strokeCircle(16, 16, 9);
+      g.lineStyle(2, lineColor, 0.5);
+      g.strokeCircle(16, 16, 6);
+      g.fillStyle(0xffffff, 0.4);
+      g.fillCircle(10, 10, 4);
+      g.generateTexture(name, 32, 32);
+    };
+    
+    createCoin(0xfacc15, 0xfffbeb, 'coin_gold');
+    createCoin(0xef4444, 0xffaa00, 'coin_red');
+    createCoin(0x3498db, 0xffffff, 'coin_blue');
+    createCoin(0x2ecc71, 0xffffff, 'coin_green');
+    createCoin(0x9b59b6, 0xffffff, 'coin_purple');
 
-init_db()
+    // ========== ПЛАНЕТЫ ==========
+    const createPlanet = (color, hasRing, hasAtmo, idx) => {
+      g.clear();
+      g.fillStyle(color);
+      g.fillCircle(32, 32, 28);
+      g.fillStyle(0x000000, 0.3);
+      g.fillCircle(20, 20, 6);
+      g.fillCircle(44, 44, 8);
+      g.fillStyle(0xffffff, 0.15);
+      g.fillCircle(30, 45, 5);
+      if (hasRing) {
+        g.lineStyle(4, 0xccaa88, 0.7);
+        g.strokeEllipse(32, 32, 70, 20);
+      }
+      if (hasAtmo) {
+        g.fillStyle(0x88aaff, 0.25);
+        g.fillCircle(32, 32, 34);
+      }
+      g.generateTexture(`planet_${idx}`, 64, 64);
+    };
+    
+    for (let i = 1; i <= 15; i++) {
+      let color, hasRing, hasAtmo;
+      if (i % 3 === 1) { color = 0x4a90e2; hasRing = true; hasAtmo = true; }
+      else if (i % 3 === 2) { color = 0xe67e22; hasRing = false; hasAtmo = true; }
+      else { color = 0x2ecc71; hasRing = true; hasAtmo = false; }
+      createPlanet(color, hasRing, hasAtmo, i);
+    }
 
-def update_user_stats(user_id: int, username: str, first_name: str, score: int, level: int, meters: int):
-    """Обновляет статистику пользователя в БД."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    # Получаем текущие данные
-    cur.execute("SELECT best_score, best_level, total_meters, total_coins, games_played FROM users WHERE user_id = ?", (user_id,))
-    row = cur.fetchone()
-    today = datetime.now().date().isoformat()
+    // ========== КОСМИЧЕСКИЕ КОРАБЛИ ==========
+    g.clear();
+    g.fillStyle(0x88aaff);
+    g.fillEllipse(40, 30, 70, 20);
+    g.fillStyle(0xaaddff);
+    g.fillEllipse(40, 20, 40, 12);
+    g.fillStyle(0xffaa00);
+    g.fillCircle(20, 30, 5);
+    g.fillCircle(60, 30, 5);
+    g.fillCircle(40, 30, 3);
+    g.generateTexture('bg_ship_1', 90, 50);
 
-    if row:
-        best_score, best_level, total_meters, total_coins, games_played = row
-        new_best_score = max(best_score, score)
-        new_best_level = max(best_level, level)
-        new_total_meters = total_meters + meters
-        # Временно монеты не суммируем, так как не передаются. Можно добавить позже.
-        new_games_played = games_played + 1
-        cur.execute("""
-            UPDATE users SET
-                username = ?, first_name = ?,
-                best_score = ?, best_level = ?,
-                total_meters = ?, games_played = ?,
-                last_play = ?
-            WHERE user_id = ?
-        """, (username, first_name, new_best_score, new_best_level,
-              new_total_meters, new_games_played, today, user_id))
-    else:
-        cur.execute("""
-            INSERT INTO users
-            (user_id, username, first_name, best_score, best_level, total_meters, games_played, last_play)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, username, first_name, score, level, meters, 1, today))
+    g.clear();
+    g.fillStyle(0xcc3333);
+    g.fillRoundedRect(20, 20, 70, 30, 8);
+    g.fillStyle(0xff6666);
+    g.fillTriangle(90, 25, 90, 45, 110, 35);
+    g.fillStyle(0xffaa00);
+    g.fillCircle(35, 35, 5);
+    g.fillCircle(55, 35, 5);
+    g.fillCircle(75, 35, 4);
+    g.generateTexture('bg_ship_2', 120, 60);
 
-    conn.commit()
-    conn.close()
+    // ========== АСТЕРОИДЫ ==========
+    g.clear();
+    g.fillStyle(0x6b4e2e);
+    g.fillEllipse(40, 40, 70, 50);
+    g.fillStyle(0x5d3a1a);
+    g.fillEllipse(20, 20, 30, 20);
+    g.fillStyle(0xa0522d);
+    g.fillEllipse(50, 50, 25, 15);
+    g.fillStyle(0x8b5a2b);
+    g.fillCircle(30, 60, 15);
+    g.generateTexture('bg_asteroid_1', 100, 80);
 
-def get_top_users(limit: int = 10):
-    """Возвращает топ игроков по best_score."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT username, first_name, best_score, best_level, total_meters
-        FROM users
-        ORDER BY best_score DESC
-        LIMIT ?
-    """, (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return rows
+    g.clear();
+    g.fillStyle(0x88aaff);
+    g.fillEllipse(35, 35, 60, 45);
+    g.fillStyle(0xaaddff);
+    g.fillEllipse(20, 20, 20, 15);
+    g.fillStyle(0x66ccff);
+    g.fillCircle(45, 45, 12);
+    g.generateTexture('bg_asteroid_2', 90, 70);
 
-def get_user_stats(user_id: int):
-    """Возвращает статистику конкретного пользователя."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT best_score, best_level, total_meters, games_played, last_play
-        FROM users WHERE user_id = ?
-    """, (user_id,))
-    row = cur.fetchone()
-    conn.close()
-    return row
+    // ========== ЧАСТИЦЫ ==========
+    g.clear();
+    g.fillStyle(0xffffff);
+    g.fillCircle(2, 2, 2);
+    g.generateTexture('star', 4, 4);
+    
+    g.clear();
+    g.fillStyle(0xffaa00, 0.9);
+    g.fillCircle(4, 4, 4);
+    g.generateTexture('flare', 8, 8);
+    
+    g.clear();
+    g.fillStyle(0xffffff, 0.6);
+    g.fillCircle(3, 3, 3);
+    g.generateTexture('spark', 6, 6);
 
-# ----------------------------------------------------------------------
-# Текст правил (без изменений)
-# ----------------------------------------------------------------------
-RULES_TEXT = f"""
-{hbold('🌟 Добро пожаловать в SkyPulse: Пятый элемент! 🌟')}
+    // ========== КНОПКА ПАУЗЫ ==========
+    g.clear();
+    g.fillStyle(0x2c3e50, 0.85);
+    g.fillRoundedRect(0, 0, 60, 60, 10);
+    g.lineStyle(2, 0x22d3ee);
+    g.strokeRoundedRect(0, 0, 60, 60, 10);
+    g.fillStyle(0xffffff);
+    g.fillRect(15, 15, 10, 30);
+    g.fillRect(35, 15, 10, 30);
+    g.generateTexture('pause_button', 60, 60);
 
-Ты управляешь легендарным жёлтым такси из будущего. Твоя цель – пролететь как можно дальше, собирая монеты и уклоняясь от препятствий.
+    // ========== ИКОНКА МАГАЗИНА ==========
+    g.clear();
+    g.fillStyle(0xffaa00);
+    g.fillCircle(16, 16, 14);
+    g.fillStyle(0xffdd44);
+    g.fillCircle(16, 16, 10);
+    g.generateTexture('shop_icon', 32, 32);
 
-{hbold('🚖 Как играть:')}
-• Нажимай на экран, чтобы такси подпрыгивало.
-• Пролетая через ворота, получаешь очки и продвигаешься по уровням.
-• Собирай монеты (золотые и цветные), чтобы увеличивать свой состав.
-• Каждые 15 монет к твоему такси пристыковывается новый вагончик! Максимум – 12 вагонов (можно увеличить в магазине).
-• Вагончики делают игру сложнее, но и зрелищнее. Если вагон врежется в препятствие – он отвалится.
-• Головное такси уязвимо: у него есть здоровье (сердечки). При потере всех сердечек – конец игры.
+    // ========== ИКОНКА ВАГОНА ==========
+    g.clear();
+    g.fillStyle(0x88ccff);
+    g.fillRoundedRect(8, 8, 32, 18, 4);
+    g.fillStyle(0x000000);
+    g.fillRect(12, 14, 4, 3);
+    g.fillRect(20, 14, 4, 3);
+    g.fillStyle(0xffaa00);
+    g.fillCircle(10, 24, 2);
+    g.fillCircle(22, 24, 2);
+    g.generateTexture('wagon_icon', 48, 34);
 
-{hbold('🌈 Бонусные монетки:')}
-• 🔴 Красная – ускорение (x2 к очкам)
-• 🔵 Синяя – щит (временная неуязвимость)
-• 🟢 Зелёная – магнит (притягивает монеты)
-• 🟣 Фиолетовая – замедление времени
+    // ========== СЕРДЕЧКО ДЛЯ ЗДОРОВЬЯ ==========
+    g.clear();
+    g.fillStyle(0xff4444);
+    g.fillTriangle(8, 6, 16, 18, 24, 6);
+    g.fillStyle(0xff8888);
+    g.fillTriangle(8, 6, 16, 2, 24, 6);
+    g.fillStyle(0xff0000);
+    g.fillCircle(12, 8, 3);
+    g.fillCircle(20, 8, 3);
+    g.generateTexture('heart', 32, 24);
 
-{hbold('🏆 Прогрессия:')}
-С каждым уровнем скорость растёт, а проходы сужаются. Каждые 10 уровней появляется планета-станция – коснись её, чтобы получить бонус за каждый вагон и открыть магазин.
+    // ========== ПЛАНЕТА-СТАНЦИЯ ==========
+    g.clear();
+    g.fillStyle(0xaa88ff);
+    g.fillCircle(48, 48, 40);
+    g.fillStyle(0xccaa88);
+    g.fillCircle(48, 48, 30);
+    g.fillStyle(0xffaa00);
+    g.fillCircle(48, 48, 10);
+    g.fillStyle(0xffffff, 0.3);
+    g.fillCircle(20, 20, 8);
+    g.lineStyle(4, 0xffffff, 0.5);
+    g.strokeCircle(48, 48, 45);
+    g.generateTexture('station_planet', 96, 96);
 
-{hbold('🎮 Управление:')}
-Просто тапай по экрану – такси взлетает. Управляй ритмом, чтобы пройти между препятствиями.
+    g.destroy();
+  }
+}
 
-{hbold('📊 Таблица лидеров:')}
-Используй команду /top, чтобы увидеть лучших игроков.
-"""
+// =========================================================================
+// PlayScene – основной игровой процесс (с улучшениями)
+// =========================================================================
+class PlayScene extends Phaser.Scene {
+  constructor() {
+    super('play');
+  }
 
-# ----------------------------------------------------------------------
-# Клавиатура для быстрого доступа
-# ----------------------------------------------------------------------
-def get_main_keyboard():
-    """Возвращает Reply-клавиатуру с основными командами."""
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🚀 Играть"), KeyboardButton(text="📊 Топ")],
-            [KeyboardButton(text="📜 Правила"), KeyboardButton(text="🏆 Мой рекорд")]
-        ],
-        resize_keyboard=True
+  // Добавляем параметр delta для плавного движения фона
+  create() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    // Счётчики
+    this.score = 0;
+    this.crystals = 0;
+    this.meters = 0;
+    this.best = Number(localStorage.getItem('skypulse_best') || 0);
+
+    // Прогрессия вагонов
+    this.wagons = [];
+    this.collectedCoins = 0;
+    this.coinsForWagon = 15;      // монет на вагон
+    this.maxWagons = 12;           // базовое значение, будет обновлено из сохранения
+    this.wagonGap = 28;            // расстояние между вагонами
+    this.wagonSpring = 0.12;       // упругость
+    this.targetPlayerX = 110;      // начальная позиция
+    this.playerXSpeed = 0.05;      // скорость смещения к цели
+
+    // Состояние
+    this.started = false;
+    this.dead = false;
+    this.level = 0;
+    this.isPaused = false;
+    this.pauseOverlay = null;
+    this.pauseTexts = [];
+
+    // Здоровье головы
+    this.maxHeadHP = 3;            // базовое, обновится из сохранения
+    this.headHP = this.maxHeadHP;
+
+    // Параметры сложности
+    this.baseSpeed = 240;
+    this.currentSpeed = this.baseSpeed;
+    this.gapSize = 240;
+    this.spawnDelay = 1300;
+
+    this.gateTextures = ['gate_blue', 'gate_green', 'gate_yellow', 'gate_red', 'gate_purple'];
+
+    // Бонусы
+    this.bonusActive = false;
+    this.bonusType = null;
+    this.bonusTime = 0;
+    this.bonusMultiplier = 1;
+    this.bonusTimer = null;
+    this.shieldActive = false;
+    this.magnetRange = 220;
+    this.lastBonusTime = 0;
+
+    // ========== УЛУЧШЕНИЯ (МАГАЗИН) ==========
+    this.upgradeLevels = {
+      jumpPower: 0,
+      gravity: 0,
+      shieldDuration: 0,
+      magnetRange: 0,
+      wagonHP: 0,
+      maxWagons: 0,
+      wagonGap: 0,
+      headHP: 0,
+      revival: 0
+    };
+    this.upgradeCosts = {
+      jumpPower: 10,
+      gravity: 15,
+      shieldDuration: 20,
+      magnetRange: 20,
+      wagonHP: 25,
+      maxWagons: 30,
+      wagonGap: 30,
+      headHP: 40,
+      revival: 50
+    };
+    this.shopVisible = false;
+    this.shopElements = [];
+
+    // Группы объектов
+    this.pipes = [];
+    this.coins = [];
+    this.scoreZones = [];
+    this.stars = [];
+    this.planets = [];
+    this.ships = [];
+    this.asteroids = [];
+    this.hearts = []; // для отображения здоровья
+
+    // Таймеры
+    this.mainTimers = [];
+    this.soundQueue = [];
+
+    // Планета-станция
+    this.stationPlanet = null;
+    this.stationActive = false;
+    this.stationTimer = null;
+
+    // Загрузка сохранённого прогресса
+    this.loadProgress();
+
+    // Создание мира
+    this.createBackground();
+    this.createPlanets();
+    this.createShips();
+    this.createAsteroids();
+    this.createPlayer();
+    this.createUI();
+
+    // Управление
+    this.input.on('pointerdown', () => {
+      if (this.dead) {
+        this.scene.restart();
+        return;
+      }
+      if (!this.started) this.startRun();
+      this.flap();
+    });
+
+    this.physics.world.setBounds(0, 0, w, h);
+    this.events.on('resize', this.onResize, this);
+    this.scale.on('resize', this.onResize, this);
+  }
+
+  // НОВЫЙ МЕТОД: загрузка прогресса из localStorage
+  loadProgress() {
+    try {
+      const saved = localStorage.getItem('skypulse_progress');
+      if (saved) {
+        const data = JSON.parse(saved);
+        this.crystals = data.crystals || 0;
+        this.collectedCoins = data.collectedCoins || 0;
+        this.maxWagons = data.maxWagons || 12;
+        this.wagonGap = data.wagonGap || 28;
+        this.magnetRange = data.magnetRange || 220;
+        this.maxHeadHP = data.maxHeadHP || 3;
+        this.headHP = this.maxHeadHP; // начинаем с полным здоровьем
+        // upgradeLevels
+        if (data.upgradeLevels) {
+          for (let key in this.upgradeLevels) {
+            if (data.upgradeLevels[key] !== undefined) {
+              this.upgradeLevels[key] = data.upgradeLevels[key];
+            }
+          }
+        }
+        // Применяем некоторые улучшения сразу
+        this.maxWagons = 12 + this.upgradeLevels.maxWagons * 2;
+        this.wagonGap = 28 - this.upgradeLevels.wagonGap * 2;
+        this.magnetRange = 220 + this.upgradeLevels.magnetRange * 30;
+        this.maxHeadHP = 3 + this.upgradeLevels.headHP;
+        this.headHP = this.maxHeadHP;
+        // Гравитация
+        this.physics.world.gravity.y = 1300 - this.upgradeLevels.gravity * 50;
+      }
+    } catch (e) {
+      console.warn('Failed to load progress', e);
+    }
+  }
+
+  // НОВЫЙ МЕТОД: сохранение прогресса
+  saveProgress() {
+    const data = {
+      crystals: this.crystals,
+      collectedCoins: this.collectedCoins,
+      maxWagons: this.maxWagons,
+      wagonGap: this.wagonGap,
+      magnetRange: this.magnetRange,
+      maxHeadHP: this.maxHeadHP,
+      upgradeLevels: this.upgradeLevels
+    };
+    localStorage.setItem('skypulse_progress', JSON.stringify(data));
+  }
+
+  // Обновляем update, добавляем параметр delta
+  update(time, delta) {
+    if (this.isPaused) return;
+
+    // Передаём delta в методы фона
+    this.updateStars(delta);
+    this.updatePlanets(delta);
+    this.updateShips(delta);
+    this.updateAsteroids(delta);
+
+    if (!this.started || this.dead) return;
+
+    // Плавное смещение игрока к целевой позиции
+    this.player.x += (this.targetPlayerX - this.player.x) * this.playerXSpeed;
+
+    const body = this.player.body;
+    this.player.setAngle(Phaser.Math.Clamp(body.velocity.y * 0.05, -20, 75));
+
+    if (!this.shieldActive && (this.player.y < -50 || this.player.y > this.scale.height + 50)) {
+      this.handleDeath();
+    }
+
+    if (this.bonusActive && this.bonusType === 'magnet') {
+      const magnetCoins = this.coins.filter(item => item.active);
+      for (let item of magnetCoins) {
+        const dist = Phaser.Math.Distance.Between(
+          this.player.x, this.player.y,
+          item.x, item.y
+        );
+        if (dist < this.magnetRange) {
+          const angle = Phaser.Math.Angle.Between(item.x, item.y, this.player.x, this.player.y);
+          item.x += Math.cos(angle) * 10;
+          item.y += Math.sin(angle) * 10;
+        }
+      }
+    }
+
+    this.updateWagons();
+    this.cleanupObjects();
+
+    // Проверка касания планеты-станции
+    if (this.stationPlanet && this.stationPlanet.active && this.stationActive) {
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        this.stationPlanet.x, this.stationPlanet.y
+      );
+      if (dist < 100) {
+        this.touchStation();
+      }
+    }
+  }
+
+  // =======================================================================
+  // СОЗДАНИЕ МИРА
+  // =======================================================================
+
+  createBackground() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    
+    this.add.rectangle(w / 2, h / 2, w, h, 0x030712).setDepth(-30);
+    
+    for (let i = 0; i < 200; i++) {
+      const star = this.add.image(
+        Phaser.Math.Between(0, w),
+        Phaser.Math.Between(0, h),
+        'star'
+      );
+      star.setScale(Phaser.Math.FloatBetween(0.2, 1.8));
+      star.setAlpha(Phaser.Math.FloatBetween(0.1, 0.7));
+      star.setDepth(-25);
+      this.stars.push({
+        sprite: star,
+        speed: Phaser.Math.Between(3, 20),
+      });
+    }
+  }
+
+  createPlanets() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    for (let i = 1; i <= 15; i++) {
+      const x = Phaser.Math.Between(w, w * 15);
+      const y = Phaser.Math.Between(50, h - 50);
+      const planet = this.add.image(x, y, `planet_${i}`);
+      planet.setScale(Phaser.Math.FloatBetween(2.0, 4.0));
+      planet.setAlpha(0.5 + Math.random() * 0.3);
+      planet.setDepth(-15);
+      this.planets.push({
+        sprite: planet,
+        speed: Phaser.Math.Between(2, 12),
+      });
+    }
+  }
+
+  createShips() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const shipTextures = ['bg_ship_1', 'bg_ship_2'];
+    for (let i = 0; i < 8; i++) {
+      const tex = shipTextures[Math.floor(Math.random() * shipTextures.length)];
+      const ship = this.add.image(
+        Phaser.Math.Between(w, w * 12),
+        Phaser.Math.Between(50, h - 50),
+        tex
+      );
+      ship.setScale(Phaser.Math.FloatBetween(0.5, 1.5));
+      ship.setAlpha(0.7);
+      ship.setDepth(-10);
+      ship.setBlendMode(Phaser.BlendModes.ADD);
+      this.ships.push({
+        sprite: ship,
+        speed: Phaser.Math.Between(3, 10),
+      });
+    }
+  }
+
+  createAsteroids() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const asteroidTextures = ['bg_asteroid_1', 'bg_asteroid_2'];
+    for (let i = 0; i < 10; i++) {
+      const tex = asteroidTextures[Math.floor(Math.random() * asteroidTextures.length)];
+      const asteroid = this.add.image(
+        Phaser.Math.Between(w, w * 12),
+        Phaser.Math.Between(50, h - 50),
+        tex
+      );
+      asteroid.setScale(Phaser.Math.FloatBetween(0.6, 1.8));
+      asteroid.setAlpha(0.7);
+      asteroid.setDepth(-12);
+      asteroid.setBlendMode(Phaser.BlendModes.ADD);
+      this.asteroids.push({
+        sprite: asteroid,
+        speed: Phaser.Math.Between(4, 14),
+      });
+    }
+  }
+
+  createPlayer() {
+    const h = this.scale.height;
+    this.player = this.physics.add.image(this.targetPlayerX, h / 2, 'player');
+    this.player.setScale(0.9);
+    this.player.setCollideWorldBounds(false);
+    this.player.setMaxVelocity(600, 1000);
+    this.player.body.setCircle(24, 15, 5);
+    this.player.setBlendMode(Phaser.BlendModes.ADD);
+    this.player.body.setMass(10000);
+
+    // Звуки
+    this.coinSound = this.sound.add('coin_sound', { volume: 0.4 });
+    this.itemSound = this.sound.add('item_sound', { volume: 0.5 });
+    this.tapSound = this.sound.add('tap_sound', { volume: 0.3 });
+    this.wagonSound = this.sound.add('wagon_sound', { volume: 0.6 });
+    this.levelUpSound = this.sound.add('level_up_sound', { volume: 0.5 });
+    this.bgMusic = this.sound.add('bg_music', { loop: true, volume: 0.4 });
+    this.purchaseSound = this.sound.add('purchase_sound', { volume: 0.5 });
+    this.reviveSound = this.sound.add('revive_sound', { volume: 0.5 });
+
+    this.trailEmitter = this.add.particles(0, 0, 'flare', {
+      speed: 40,
+      scale: { start: 0.4, end: 0 },
+      alpha: { start: 0.6, end: 0 },
+      lifespan: 200,
+      blendMode: Phaser.BlendModes.ADD,
+      follow: this.player,
+      followOffset: { x: -20, y: 0 },
+      quantity: 4,
+      frequency: 15,
+    });
+  }
+
+  createUI() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    this.scoreText = this.add.text(w / 2, 56, '0', {
+      fontSize: '52px',
+      color: '#fff',
+      fontStyle: 'bold',
+      stroke: '#22d3ee',
+      strokeThickness: 4,
+      fontFamily: 'Arial, sans-serif',
+    }).setOrigin(0.5).setDepth(10).setScrollFactor(0);
+
+    this.bestText = this.add.text(20, 24, `🏆 ${this.best}`, {
+      fontSize: '20px',
+      color: '#7dd3fc',
+      fontStyle: 'bold',
+      stroke: '#0f172a',
+      strokeThickness: 2,
+    }).setDepth(10).setScrollFactor(0);
+
+    this.crystalText = this.add.text(w - 20, 24, '💎 0', {
+      fontSize: '20px',
+      color: '#fde047',
+      fontStyle: 'bold',
+      stroke: '#0f172a',
+      strokeThickness: 2,
+    }).setOrigin(1, 0).setDepth(10).setScrollFactor(0);
+
+    this.meterText = this.add.text(20, h - 80, '📏 0 м', {
+      fontSize: '18px',
+      color: '#a5f3fc',
+      fontStyle: 'bold',
+      stroke: '#0f172a',
+      strokeThickness: 2,
+    }).setDepth(10).setScrollFactor(0);
+
+    this.bonusText = this.add.text(w - 20, 70, '', {
+      fontSize: '18px',
+      fontStyle: 'bold',
+      stroke: '#0f172a',
+      strokeThickness: 2,
+      align: 'right',
+    }).setOrigin(1, 0).setDepth(10).setVisible(false).setScrollFactor(0);
+
+    this.levelText = this.add.text(w / 2, h / 2 - 100, '', {
+      fontSize: '48px',
+      color: '#fff',
+      fontStyle: 'bold',
+      stroke: '#7c3aed',
+      strokeThickness: 6,
+    }).setOrigin(0.5).setDepth(15).setVisible(false).setScrollFactor(0);
+
+    this.wagonCountText = this.add.text(w - 150, h - 40, `🚃 0/${this.maxWagons}`, {
+      fontSize: '18px',
+      color: '#88ccff',
+      fontStyle: 'bold',
+      stroke: '#0f172a',
+      strokeThickness: 2,
+    }).setDepth(10).setScrollFactor(0);
+
+    // Прогресс-бар для монет (новый)
+    this.progressBarBg = this.add.rectangle(w / 2, h - 50, 200, 14, 0x333333).setDepth(9).setScrollFactor(0);
+    this.progressBar = this.add.rectangle(w / 2 - 100, h - 50, 0, 12, 0xffaa00).setOrigin(0, 0.5).setDepth(10).setScrollFactor(0);
+    this.progressBarText = this.add.text(w / 2, h - 50, `${this.collectedCoins}/${this.coinsForWagon}`, {
+      fontSize: '12px',
+      color: '#fff',
+      fontStyle: 'bold',
+      stroke: '#000',
+      strokeThickness: 1,
+    }).setOrigin(0.5).setDepth(11).setScrollFactor(0);
+
+    // Сердечки здоровья (новые)
+    this.heartContainer = this.add.container(20, 80).setDepth(10).setScrollFactor(0);
+    this.updateHearts();
+
+    this.introText = this.add.text(w / 2, h * 0.40, 'СОБИРАЙ МОНЕТЫ\nЧТОБЫ УДЛИНИТЬ ТАКСИ', {
+      fontSize: '16px',
+      color: '#fff',
+      align: 'center',
+      fontStyle: 'bold',
+      stroke: '#7c3aed',
+      strokeThickness: 3,
+      shadow: { offsetX: 2, offsetY: 2, color: '#000', blur: 4, fill: true },
+    }).setOrigin(0.5).setDepth(10).setScrollFactor(0);
+
+    this.coinTipsText = this.add.text(w / 2, h * 0.55, '🟡 Золото | 🔴 Скорость | 🔵 Щит | 🟢 Магнит | 🟣 Замедление', {
+      fontSize: '12px',
+      color: '#cbd5e1',
+      align: 'center',
+      fontStyle: 'italic',
+    }).setOrigin(0.5).setDepth(10).setScrollFactor(0);
+
+    // Кнопка паузы
+    this.pauseButton = this.add.image(w - 40, h - 40, 'pause_button')
+      .setInteractive()
+      .setDepth(20)
+      .setScrollFactor(0);
+    this.pauseButton.on('pointerdown', () => this.togglePause());
+    this.pauseButton.on('pointerover', () => this.pauseButton.setScale(1.1));
+    this.pauseButton.on('pointerout', () => this.pauseButton.setScale(1));
+
+    // Кнопка магазина теперь всегда видна (изменено)
+    this.shopButton = this.add.image(w - 120, h - 40, 'shop_icon')
+      .setInteractive()
+      .setDepth(20)
+      .setScrollFactor(0)
+      .setVisible(true); // всегда видна
+    this.shopButton.on('pointerdown', () => this.showShop());
+
+    this.createGameOverBox();
+
+    // Обновляем тексты после загрузки прогресса
+    this.crystalText.setText(`💎 ${this.crystals}`);
+    this.wagonCountText.setText(`🚃 ${this.wagons.length}/${this.maxWagons}`);
+    this.progressBarText.setText(`${this.collectedCoins}/${this.coinsForWagon}`);
+    this.updateProgressBar();
+  }
+
+  // НОВЫЙ МЕТОД: обновление сердечек
+  updateHearts() {
+    this.heartContainer.removeAll(true);
+    for (let i = 0; i < this.maxHeadHP; i++) {
+      const heart = this.add.image(i * 28, 0, 'heart').setScale(0.8);
+      if (i >= this.headHP) {
+        heart.setTint(0x666666);
+        heart.setAlpha(0.5);
+      }
+      this.heartContainer.add(heart);
+    }
+  }
+
+  // НОВЫЙ МЕТОД: обновление прогресс-бара
+  updateProgressBar() {
+    const percent = Math.min(this.collectedCoins / this.coinsForWagon, 1);
+    this.progressBar.width = 200 * percent;
+    this.progressBarText.setText(`${this.collectedCoins}/${this.coinsForWagon}`);
+  }
+
+  createGameOverBox() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    
+    const panel = this.add.rectangle(0, 0, Math.min(400, w * 0.85), 360, 0x0f172a, 0.95)
+      .setStrokeStyle(4, 0x22d3ee, 0.9)
+      .setScrollFactor(0);
+    
+    const title = this.add.text(0, -130, 'ИГРА ОКОНЧЕНА', {
+      fontSize: '32px',
+      color: '#fff',
+      fontStyle: 'bold',
+      stroke: '#7c3aed',
+      strokeThickness: 4
+    }).setOrigin(0.5).setScrollFactor(0);
+    
+    const subtitle = this.add.text(0, -30, '', {
+      fontSize: '18px',
+      color: '#7dd3fc',
+      fontStyle: 'bold',
+      align: 'center',
+      stroke: '#0f172a',
+      strokeThickness: 2
+    }).setOrigin(0.5).setScrollFactor(0);
+    // Сохраняем ссылку, не через setName
+    this.gameOverSubtitle = subtitle;
+    
+    const tip = this.add.text(0, 110, 'Нажми, чтобы сыграть снова', {
+      fontSize: '18px',
+      color: '#cbd5e1',
+      align: 'center',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setScrollFactor(0);
+    
+    this.gameOverBox = this.add.container(w / 2, h / 2, [panel, title, subtitle, tip]);
+    this.gameOverBox.setVisible(false);
+  }
+
+  // =======================================================================
+  // ИГРОВАЯ ЛОГИКА
+  // =======================================================================
+
+  startRun() {
+    this.started = true;
+    this.introText.setVisible(false);
+    this.coinTipsText.setVisible(false);
+    if (this.bgMusic) this.bgMusic.play();
+
+    this.spawnGate();
+    this.scheduleNextSpawn();
+
+    // Запускаем проверку на появление планеты-станции
+    this.checkStationSpawn();
+  }
+
+  scheduleNextSpawn() {
+    if (this.dead) return;
+    this.time.delayedCall(this.spawnDelay, () => {
+      if (!this.dead && this.started) {
+        this.spawnGate();
+        this.scheduleNextSpawn();
+      }
+    });
+  }
+
+  flap() {
+    const jumpBase = 300 + this.upgradeLevels.jumpPower * 20;
+    this.player.body.setVelocityY(-jumpBase);
+    this.player.setScale(0.95);
+    this.tweens.add({
+      targets: this.player,
+      scaleX: 0.9,
+      scaleY: 0.9,
+      duration: 150,
+      ease: 'Quad.out',
+    });
+    this.playSound(this.tapSound);
+    try { window.Telegram?.WebApp?.HapticFeedback?.selectionChanged?.(); } catch {}
+  }
+
+  playSound(sound, volume = null) {
+    if (!sound) return;
+    try {
+      if (sound.isPlaying) return;
+      if (volume !== null) sound.setVolume(volume);
+      sound.play();
+    } catch (e) {
+      console.warn('Sound play error:', e);
+    }
+  }
+
+  togglePause() {
+    this.isPaused = !this.isPaused;
+
+    if (this.isPaused) {
+      this.physics.pause();
+      this.pauseOverlay = this.add.rectangle(
+        this.scale.width / 2,
+        this.scale.height / 2,
+        this.scale.width,
+        this.scale.height,
+        0x000000, 0.5
+      ).setDepth(25).setScrollFactor(0);
+
+      const pauseText = this.add.text(
+        this.scale.width / 2,
+        this.scale.height / 2 - 50,
+        '⏸️ ПАУЗА',
+        {
+          fontSize: '48px',
+          color: '#fff',
+          fontStyle: 'bold',
+          stroke: '#7c3aed',
+          strokeThickness: 4
+        }
+      ).setOrigin(0.5).setDepth(26).setScrollFactor(0);
+
+      const tipText = this.add.text(
+        this.scale.width / 2,
+        this.scale.height / 2 + 30,
+        'Нажми на кнопку паузы, чтобы продолжить',
+        {
+          fontSize: '16px',
+          color: '#ccc',
+          align: 'center'
+        }
+      ).setOrigin(0.5).setDepth(26).setScrollFactor(0);
+
+      this.pauseTexts = [pauseText, tipText];
+      // Магазин уже виден, ничего не делаем
+    } else {
+      this.physics.resume();
+      if (this.pauseOverlay) {
+        this.pauseOverlay.destroy();
+        this.pauseOverlay = null;
+      }
+      if (this.pauseTexts) {
+        this.pauseTexts.forEach(t => t.destroy());
+        this.pauseTexts = [];
+      }
+      this.hideShop();
+    }
+  }
+
+  updateLevel() {
+    const newLevel = Math.floor(this.meters / 300);
+    if (newLevel > this.level) {
+      this.level = newLevel;
+      
+      this.baseSpeed = 240 + this.level * 18;
+      this.gapSize = Math.max(160, 240 - this.level * 6);
+      this.spawnDelay = Math.min(2500, 1300 + this.level * 50);
+      
+      if (!this.bonusActive) this.currentSpeed = this.baseSpeed;
+
+      this.levelText.setText(`УРОВЕНЬ ${this.level + 1}`);
+      this.levelText.setVisible(true);
+      this.levelText.setAlpha(1);
+      
+      this.playSound(this.levelUpSound);
+      
+      this.tweens.add({
+        targets: this.levelText,
+        alpha: 0,
+        duration: 2000,
+        ease: 'Power2',
+      });
+
+      this.addRandomPlanet();
+      this.checkStationSpawn(); // проверяем, не пора ли создать станцию
+    }
+  }
+
+  // НОВЫЙ МЕТОД: проверка спавна планеты-станции (каждые 10 уровней)
+  checkStationSpawn() {
+    if (this.stationActive || this.dead) return;
+    if (this.level > 0 && this.level % 10 === 0 && !this.stationPlanet) {
+      this.spawnStation();
+    }
+  }
+
+  // НОВЫЙ МЕТОД: создание планеты-станции
+  spawnStation() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const x = w + 200;
+    const y = Phaser.Math.Between(100, h - 100);
+    this.stationPlanet = this.physics.add.image(x, y, 'station_planet')
+      .setImmovable(true)
+      .setScale(1.5)
+      .setDepth(-5)
+      .setVelocityX(-this.currentSpeed * 0.3); // движется медленнее
+    this.stationPlanet.body.setAllowGravity(false);
+    this.stationActive = true;
+
+    // Добавляем подпись
+    const label = this.add.text(x, y - 80, '🚉 СТАНЦИЯ', {
+      fontSize: '20px',
+      color: '#ffaa00',
+      fontStyle: 'bold',
+      stroke: '#000',
+      strokeThickness: 2
+    }).setOrigin(0.5).setDepth(-4);
+    this.stationPlanet.label = label;
+
+    // Анимация вращения
+    this.tweens.add({
+      targets: this.stationPlanet,
+      angle: 360,
+      duration: 8000,
+      repeat: -1,
+      ease: 'Linear'
+    });
+  }
+
+  // НОВЫЙ МЕТОД: касание станции
+  touchStation() {
+    if (!this.stationActive || !this.stationPlanet) return;
+    this.stationActive = false;
+
+    // Бонус: монеты за каждый вагон
+    const bonus = this.wagons.length * 10;
+    this.crystals += bonus;
+    this.crystalText.setText(`💎 ${this.crystals}`);
+    this.saveProgress();
+
+    // Визуальный эффект
+    const emitter = this.add.particles(this.stationPlanet.x, this.stationPlanet.y, 'flare', {
+      speed: 200,
+      scale: { start: 1, end: 0 },
+      lifespan: 800,
+      quantity: 30,
+      blendMode: Phaser.BlendModes.ADD,
+      tint: 0xffaa00
+    });
+    emitter.explode(30);
+
+    // Уничтожаем все вагоны
+    this.wagons.forEach(w => w.destroy());
+    this.wagons = [];
+    this.targetPlayerX = 110;
+    this.wagonCountText.setText(`🚃 0/${this.maxWagons}`);
+    this.updateCameraZoom();
+
+    // Показываем сообщение
+    const msg = this.add.text(this.player.x, this.player.y - 50, `+${bonus} 💎`, {
+      fontSize: '32px',
+      color: '#ffaa00',
+      fontStyle: 'bold',
+      stroke: '#000',
+      strokeThickness: 4
+    }).setOrigin(0.5).setDepth(15);
+    this.tweens.add({
+      targets: msg,
+      y: msg.y - 100,
+      alpha: 0,
+      duration: 1500,
+      onComplete: () => msg.destroy()
+    });
+
+    // Открываем магазин (опционально)
+    this.showShop();
+
+    // Удаляем планету
+    if (this.stationPlanet.label) this.stationPlanet.label.destroy();
+    this.stationPlanet.destroy();
+    this.stationPlanet = null;
+  }
+
+  addRandomPlanet() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const idx = Phaser.Math.Between(1, 15);
+    const planet = this.add.image(w + 200, Phaser.Math.Between(50, h - 50), `planet_${idx}`);
+    planet.setScale(Phaser.Math.FloatBetween(1.5, 3.0));
+    planet.setAlpha(0.6);
+    planet.setDepth(-15);
+    this.planets.push({
+      sprite: planet,
+      speed: Phaser.Math.Between(5, 18),
+    });
+  }
+
+  updateWagons() {
+    if (this.wagons.length === 0) return;
+    let prev = this.player;
+    for (let i = 0; i < this.wagons.length; i++) {
+      let wagon = this.wagons[i];
+      let targetX = prev.x - this.wagonGap;
+      let targetY = prev.y;
+      let dx = targetX - wagon.x;
+      let dy = targetY - wagon.y;
+      wagon.x += dx * this.wagonSpring;
+      wagon.y += dy * this.wagonSpring;
+      if (wagon.body) wagon.body.reset(wagon.x, wagon.y);
+      prev = wagon;
+    }
+  }
+
+  addWagon() {
+    if (this.wagons.length >= this.maxWagons) return;
+    
+    this.targetPlayerX += this.wagonGap * 0.5;
+    this.targetPlayerX = Math.min(this.scale.width * 0.8, this.targetPlayerX);
+    
+    let last = this.wagons.length > 0 ? this.wagons[this.wagons.length - 1] : this.player;
+    let spawnX = last.x - this.wagonGap * 2;
+    let spawnY = last.y;
+    let texIndex = Phaser.Math.Between(0, 9);
+    
+    let wagon = this.physics.add.image(spawnX, spawnY, `wagon_${texIndex}`);
+    wagon.setScale(0.8);
+    wagon.body.setCircle(12, 8, 6);
+    wagon.body.setAllowGravity(false);
+    wagon.body.setMass(0.5);
+    wagon.body.setDrag(0.9);
+    wagon.setDepth(5 + this.wagons.length);
+    wagon.setData('hp', 1 + this.upgradeLevels.wagonHP);
+
+    this.physics.add.collider(wagon, this.pipes, this.wagonHit, null, this);
+    this.wagons.push(wagon);
+
+    wagon.x = this.scale.width + 50;
+    wagon.y = this.player.y;
+    this.tweens.add({
+      targets: wagon,
+      x: spawnX,
+      duration: 500,
+      ease: 'Sine.easeOut',
+      onComplete: () => { wagon.x = spawnX; }
+    });
+
+    this.playSound(this.wagonSound);
+    this.wagonCountText.setText(`🚃 ${this.wagons.length}/${this.maxWagons}`);
+    this.updateCameraZoom();
+
+    const emitter = this.add.particles(wagon.x, wagon.y, 'spark', {
+      speed: 80,
+      scale: { start: 0.6, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      lifespan: 300,
+      quantity: 10,
+      blendMode: Phaser.BlendModes.ADD,
+      tint: 0x88ccff,
+    });
+    emitter.explode(10);
+
+    this.saveProgress(); // сохраняем после добавления вагона
+  }
+
+  wagonHit(wagon, pipe) {
+    let hp = wagon.getData('hp') - 1;
+    if (hp <= 0) {
+      let index = this.wagons.indexOf(wagon);
+      if (index !== -1) {
+        wagon.destroy();
+        this.wagons.splice(index, 1);
+        this.targetPlayerX -= this.wagonGap * 0.5;
+        this.targetPlayerX = Math.max(110, this.targetPlayerX);
+        this.cameras.main.shake(100, 0.005);
+        this.wagonCountText.setText(`🚃 ${this.wagons.length}/${this.maxWagons}`);
+        this.updateCameraZoom();
+        this.saveProgress(); // сохраняем после потери вагона
+      }
+    } else {
+      wagon.setData('hp', hp);
+      this.tweens.add({
+        targets: wagon,
+        alpha: 0.5,
+        duration: 100,
+        yoyo: true,
+        repeat: 1
+      });
+    }
+  }
+
+  updateCameraZoom() {
+    let totalLength = (this.wagons.length + 1) * this.wagonGap;
+    let screenWidth = this.scale.width;
+    let targetZoom = Math.min(1, screenWidth / (totalLength + 100));
+    targetZoom = Math.max(0.7, targetZoom); // увеличен минимальный зум с 0.5 до 0.7
+    this.tweens.add({
+      targets: this.cameras.main,
+      zoom: targetZoom,
+      duration: 500,
+      ease: 'Sine.easeInOut'
+    });
+  }
+
+  spawnCoin(x, y) {
+    if (Math.random() > 0.9) return;
+    
+    let coinType = 'gold';
+    let texture = 'coin_gold';
+
+    const r = Math.random();
+    if (this.level >= 1 && r < 0.15) {
+      coinType = 'red';
+      texture = 'coin_red';
+    } else if (this.level >= 2 && r < 0.28) {
+      coinType = 'blue';
+      texture = 'coin_blue';
+    } else if (this.level >= 3 && r < 0.40) {
+      coinType = 'green';
+      texture = 'coin_green';
+    } else if (this.level >= 4 && r < 0.50) {
+      coinType = 'purple';
+      texture = 'coin_purple';
+    }
+
+    const coin = this.physics.add.image(
+      x + Phaser.Math.Between(-20, 20),
+      y,
+      texture
     )
-    return keyboard
+      .setImmovable(true)
+      .setVelocityX(-this.currentSpeed)
+      .setAngularVelocity(200);
+    
+    coin.body.setAllowGravity(false);
+    coin.setScale(0.01);
+    coin.coinType = coinType;
 
-# ----------------------------------------------------------------------
-# Команда /start
-# ----------------------------------------------------------------------
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    """Приветствие с кнопкой запуска игры."""
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Играть в SkyPulse", web_app=WebAppInfo(url=GAME_URL))]
-        ]
-    )
-    await message.answer(
-        f"Привет, {message.from_user.first_name or 'пилот'}! 👋\n\n"
-        "Это игра SkyPulse – такси-поезд в стиле Пятого элемента.\n"
-        "Нажми на кнопку, чтобы начать, или используй /rules для подробных правил.",
-        reply_markup=keyboard
-    )
-    # Отправляем клавиатуру
-    await message.answer("Выбери действие:", reply_markup=get_main_keyboard())
+    this.tweens.add({
+      targets: coin,
+      scaleX: 1,
+      scaleY: 1,
+      duration: 300,
+      ease: 'Back.out',
+    });
 
-# ----------------------------------------------------------------------
-# Команда /rules
-# ----------------------------------------------------------------------
-@dp.message(Command("rules"))
-@dp.message(lambda msg: msg.text and msg.text.lower() == "📜 правила")
-async def cmd_rules(message: types.Message):
-    """Отправляет правила игры."""
-    await message.answer(RULES_TEXT, parse_mode=ParseMode.MARKDOWN)
+    this.coins.push(coin);
+    this.physics.add.overlap(
+      this.player,
+      coin,
+      (player, coin) => this.collectCoin(coin),
+      null,
+      this
+    );
+  }
 
-# ----------------------------------------------------------------------
-# Команда /game (и кнопка "Играть")
-# ----------------------------------------------------------------------
-@dp.message(Command("game"))
-@dp.message(lambda msg: msg.text and msg.text.lower() == "🚀 играть")
-async def cmd_game(message: types.Message):
-    """Кнопка для игры."""
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🚖 Играть сейчас", web_app=WebAppInfo(url=GAME_URL))]
-        ]
-    )
-    await message.answer("Нажми кнопку, чтобы запустить игру:", reply_markup=keyboard)
+  collectCoin(coin) {
+    if (!coin.active) return;
+    
+    let value = 1;
+    let bonusType = null;
+    
+    switch (coin.coinType) {
+      case 'red':
+        value = 2;
+        bonusType = 'speed';
+        break;
+      case 'blue':
+        value = 1;
+        bonusType = 'shield';
+        break;
+      case 'green':
+        value = 1;
+        bonusType = 'magnet';
+        break;
+      case 'purple':
+        value = 1;
+        bonusType = 'slow';
+        break;
+      default:
+        value = 1;
+    }
+    
+    if (this.bonusActive && this.bonusType === 'speed') value *= 2;
 
-# ----------------------------------------------------------------------
-# Команда /top
-# ----------------------------------------------------------------------
-@dp.message(Command("top"))
-@dp.message(lambda msg: msg.text and msg.text.lower() == "📊 топ")
-async def cmd_top(message: types.Message):
-    """Показывает топ-10 игроков."""
-    top = get_top_users(10)
-    if not top:
-        await message.answer("Пока нет ни одного игрока в таблице лидеров.")
-        return
+    this.crystals += value;
+    this.crystalText.setText(`💎 ${this.crystals}`);
+    this.collectedCoins += value;
 
-    text = "🏆 *ТОП-10 ИГРОКОВ* 🏆\n\n"
-    for i, (username, first_name, best_score, best_level, total_meters) in enumerate(top, 1):
-        name = username or first_name or "Аноним"
-        text += f"{i}. {name} — {best_score} очков (ур. {best_level}, {total_meters} м)\n"
+    this.updateProgressBar();
 
-    await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+    if (this.collectedCoins >= this.coinsForWagon && this.wagons.length < this.maxWagons) {
+      this.addWagon();
+      this.collectedCoins -= this.coinsForWagon;
+      this.updateProgressBar();
+    }
 
-# ----------------------------------------------------------------------
-# Команда /mybest
-# ----------------------------------------------------------------------
-@dp.message(Command("mybest"))
-@dp.message(lambda msg: msg.text and msg.text.lower() == "🏆 мой рекорд")
-async def cmd_mybest(message: types.Message):
-    """Показывает личный рекорд пользователя."""
-    user_id = message.from_user.id
-    stats = get_user_stats(user_id)
-    if not stats:
-        await message.answer("Вы ещё не играли. Сыграйте, чтобы появилась статистика!")
-        return
+    if (bonusType) {
+      this.playSound(this.itemSound);
+      this.activateBonus(bonusType);
+    } else {
+      this.playSound(this.coinSound);
+    }
 
-    best_score, best_level, total_meters, games_played, last_play = stats
-    text = (
-        f"📊 *Ваша статистика*\n\n"
-        f"🏆 Лучший счёт: {best_score}\n"
-        f"🌟 Лучший уровень: {best_level}\n"
-        f"📏 Всего метров: {total_meters}\n"
-        f"🎮 Сыграно игр: {games_played}\n"
-        f"📅 Последняя игра: {last_play}"
-    )
-    await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+    const emitter = this.add.particles(coin.x, coin.y, 'flare', {
+      speed: 100,
+      scale: { start: 0.5, end: 0 },
+      alpha: { start: 0.8, end: 0 },
+      lifespan: 250,
+      quantity: 15,
+      blendMode: Phaser.BlendModes.ADD,
+      tint: coin.coinType === 'red' ? 0xff6666 : 0xffaa00,
+    });
+    emitter.explode(15);
 
-# ----------------------------------------------------------------------
-# Обработчик данных из WebApp
-# ----------------------------------------------------------------------
-@dp.message()
-async def handle_webapp_data(message: types.Message):
-    """Принимает данные, отправленные из игры."""
-    if not message.web_app_data:
-        return
+    this.tweens.add({
+      targets: this.crystalText,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 80,
+      yoyo: true,
+      ease: 'Quad.out',
+    });
 
-    try:
-        data = json.loads(message.web_app_data.data)
-    except json.JSONDecodeError:
-        logger.error(f"Невалидный JSON: {message.web_app_data.data}")
-        await message.answer("Ошибка обработки данных. Попробуйте ещё раз.")
-        return
+    try {
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.(
+        bonusType ? 'heavy' : 'soft'
+      );
+    } catch {}
+    
+    coin.destroy();
 
-    user = message.from_user
-    logger.info(f"Получены данные от {user.full_name} (id={user.id}): {data}")
+    this.saveProgress(); // сохраняем после сбора монет
+  }
 
-    # Извлекаем поля
-    score = data.get('score', 0)
-    level = data.get('level', 1)
-    meters = data.get('meters', 0)
-    # Монеты пока не передаются, можно добавить позже
+  activateBonus(type) {
+    const now = Date.now();
+    if (now - this.lastBonusTime < 500) return;
+    this.lastBonusTime = now;
 
-    # Сохраняем в БД
-    update_user_stats(
-        user_id=user.id,
-        username=user.username,
-        first_name=user.first_name,
-        score=score,
-        level=level,
-        meters=meters
-    )
+    if (this.bonusActive) this.deactivateBonus();
+    
+    this.bonusActive = true;
+    this.bonusType = type;
+    this.bonusTime = 5 + this.upgradeLevels.shieldDuration * 2;
 
-    await message.answer(
-        f"✅ Результат сохранён!\n"
-        f"Счёт: {score} | Уровень: {level} | Метров: {meters}\n\n"
-        f"Используй /top для просмотра лидеров."
-    )
+    switch (type) {
+      case 'speed':
+        this.currentSpeed = this.baseSpeed * 1.5;
+        this.bonusMultiplier = 2;
+        this.bonusText.setColor('#ffaa00').setText(`🚀 x2 ${this.bonusTime}с`);
+        break;
+      case 'shield':
+        this.shieldActive = true;
+        this.player.body.checkCollision.none = true;
+        this.player.setTint(0x88ccff);
+        this.bonusText.setColor('#88ccff').setText(`🛡️ ${this.bonusTime}с`);
+        break;
+      case 'magnet':
+        this.bonusText.setColor('#2ecc71').setText(`🧲 ${this.bonusTime}с`);
+        break;
+      case 'slow':
+        this.currentSpeed = this.baseSpeed * 0.6;
+        this.bonusText.setColor('#9b59b6').setText(`⏳ ${this.bonusTime}с`);
+        break;
+    }
+    
+    this.bonusText.setVisible(true);
 
-# ----------------------------------------------------------------------
-# Запуск бота
-# ----------------------------------------------------------------------
-async def main():
-    # Удаляем вебхук
-    await bot.delete_webhook(drop_pending_updates=True)
-    logger.info("Бот запущен и готов к работе")
-    await dp.start_polling(bot)
+    if (this.bonusTimer) this.bonusTimer.remove();
+    this.bonusTimer = this.time.addEvent({
+      delay: 1000,
+      callback: () => {
+        this.bonusTime -= 1;
+        if (this.bonusTime <= 0) {
+          this.deactivateBonus();
+        } else {
+          let emoji = '🚀';
+          if (type === 'shield') emoji = '🛡️';
+          else if (type === 'magnet') emoji = '🧲';
+          else if (type === 'slow') emoji = '⏳';
+          this.bonusText.setText(`${emoji} ${this.bonusTime}с`);
+        }
+      },
+      loop: true,
+    });
+  }
 
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Бот остановлен")
+  deactivateBonus() {
+    this.bonusActive = false;
+    this.bonusType = null;
+    this.shieldActive = false;
+    this.currentSpeed = this.baseSpeed;
+    this.bonusMultiplier = 1;
+    this.player.clearTint();
+    this.player.body.checkCollision.none = false;
+    this.bonusText.setVisible(false);
+    if (this.bonusTimer) {
+      this.bonusTimer.remove();
+      this.bonusTimer = null;
+    }
+  }
+
+  // ========== МАГАЗИН УЛУЧШЕНИЙ (улучшен) ==========
+  showShop() {
+    if (this.shopVisible) return;
+    this.shopVisible = true;
+    this.physics.pause();
+
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    // Затемняющий фон
+    const overlay = this.add.rectangle(w/2, h/2, w, h, 0x000000, 0.7)
+      .setDepth(40)
+      .setScrollFactor(0);
+    this.shopElements = [overlay];
+
+    // Панель магазина
+    const panel = this.add.rectangle(w/2, h/2, 500, 500, 0x0a0a1a, 0.95)
+      .setStrokeStyle(4, 0x22d3ee, 0.9)
+      .setDepth(41)
+      .setScrollFactor(0);
+    this.shopElements.push(panel);
+
+    const title = this.add.text(w/2, h/2 - 200, 'МАГАЗИН УЛУЧШЕНИЙ', {
+      fontSize: '28px',
+      color: '#ffaa00',
+      fontStyle: 'bold',
+      stroke: '#7c3aed',
+      strokeThickness: 4
+    }).setOrigin(0.5).setDepth(42).setScrollFactor(0);
+    this.shopElements.push(title);
+
+    const balance = this.add.text(w/2, h/2 - 160, `💎 ${this.crystals}`, {
+      fontSize: '24px',
+      color: '#fde047',
+      fontStyle: 'bold'
+    }).setOrigin(0.5).setDepth(42).setScrollFactor(0);
+    this.shopElements.push(balance);
+
+    const upgrades = [
+      { key: 'jumpPower', name: 'Сила прыжка', current: 300 + this.upgradeLevels.jumpPower*20, next: 300 + (this.upgradeLevels.jumpPower+1)*20 },
+      { key: 'gravity', name: 'Гравитация', current: 1300 - this.upgradeLevels.gravity*50, next: 1300 - (this.upgradeLevels.gravity+1)*50 },
+      { key: 'shieldDuration', name: 'Длительность щита', current: 5 + this.upgradeLevels.shieldDuration*2, next: 5 + (this.upgradeLevels.shieldDuration+1)*2 },
+      { key: 'magnetRange', name: 'Радиус магнита', current: 220 + this.upgradeLevels.magnetRange*30, next: 220 + (this.upgradeLevels.magnetRange+1)*30 },
+      { key: 'wagonHP', name: 'Прочность вагонов', current: 1 + this.upgradeLevels.wagonHP, next: 1 + (this.upgradeLevels.wagonHP+1) },
+      { key: 'maxWagons', name: 'Макс. вагонов', current: 12 + this.upgradeLevels.maxWagons*2, next: 12 + (this.upgradeLevels.maxWagons+1)*2 },
+      { key: 'wagonGap', name: 'Дистанция между вагонами', current: 28 - this.upgradeLevels.wagonGap*2, next: 28 - (this.upgradeLevels.wagonGap+1)*2 },
+      { key: 'headHP', name: 'Макс. здоровье', current: 3 + this.upgradeLevels.headHP, next: 3 + (this.upgradeLevels.headHP+1) },
+      { key: 'revival', name: 'Воскрешение', current: this.upgradeLevels.revival, next: this.upgradeLevels.revival+1 },
+    ];
+
+    let y = h/2 - 120;
+    // Сохраняем ссылки на текстовые поля для обновления (улучшение)
+    this.shopUpgradeTexts = [];
+    this.shopBuyButtons = [];
+
+    for (let up of upgrades) {
+      const cost = this.upgradeCosts[up.key];
+      const text = `${up.name}: ${up.current} → ${up.next} | цена: ${cost}`;
+      const t = this.add.text(w/2 - 100, y, text, {
+        fontSize: '14px',
+        color: '#fff',
+        backgroundColor: '#1a1a2e',
+        padding: { x: 5, y: 3 }
+      }).setDepth(42).setScrollFactor(0);
+      this.shopElements.push(t);
+      this.shopUpgradeTexts.push({ key: up.key, textObj: t });
+
+      const btn = this.add.text(w/2 + 100, y, '[КУПИТЬ]', {
+        fontSize: '14px',
+        color: '#0f0',
+        backgroundColor: '#0f172a',
+        padding: { x: 5, y: 3 }
+      }).setInteractive().setDepth(42).setScrollFactor(0);
+      btn.on('pointerdown', () => this.buyUpgrade(up.key));
+      this.shopElements.push(btn);
+      this.shopBuyButtons.push({ key: up.key, btnObj: btn });
+      y += 25;
+    }
+
+    const closeBtn = this.add.text(w/2, h/2 + 150, 'ЗАКРЫТЬ', {
+      fontSize: '20px',
+      color: '#f00',
+      backgroundColor: '#0f172a',
+      padding: { x: 15, y: 5 }
+    }).setInteractive().setDepth(42).setScrollFactor(0);
+    closeBtn.on('pointerdown', () => this.hideShop());
+    this.shopElements.push(closeBtn);
+  }
+
+  hideShop() {
+    if (!this.shopVisible) return;
+    this.shopElements.forEach(el => el.destroy());
+    this.shopElements = [];
+    this.shopVisible = false;
+    this.physics.resume();
+  }
+
+  // Улучшенная покупка с обновлением текста, а не пересозданием
+  buyUpgrade(key) {
+    if (this.crystals < this.upgradeCosts[key]) return;
+    this.crystals -= this.upgradeCosts[key];
+    this.crystalText.setText(`💎 ${this.crystals}`);
+    this.upgradeLevels[key]++;
+
+    // Применяем эффекты
+    switch (key) {
+      case 'jumpPower':
+        // применяется в flap()
+        break;
+      case 'gravity':
+        this.physics.world.gravity.y = 1300 - this.upgradeLevels.gravity * 50;
+        break;
+      case 'magnetRange':
+        this.magnetRange = 220 + this.upgradeLevels.magnetRange * 30;
+        break;
+      case 'wagonHP':
+        // будет применяться при создании новых вагонов
+        break;
+      case 'maxWagons':
+        this.maxWagons = 12 + this.upgradeLevels.maxWagons * 2;
+        this.wagonCountText.setText(`🚃 ${this.wagons.length}/${this.maxWagons}`);
+        break;
+      case 'wagonGap':
+        this.wagonGap = 28 - this.upgradeLevels.wagonGap * 2;
+        break;
+      case 'headHP':
+        this.maxHeadHP = 3 + this.upgradeLevels.headHP;
+        this.headHP = this.maxHeadHP; // восстанавливаем здоровье
+        this.updateHearts();
+        break;
+      case 'revival':
+        // используется в handleDeath
+        break;
+      case 'shieldDuration':
+        // используется в activateBonus
+        break;
+    }
+
+    this.playSound(this.purchaseSound); // новый звук покупки
+
+    // Обновляем тексты в магазине без пересоздания
+    if (this.shopVisible) {
+      this.updateShopTexts();
+    }
+
+    this.saveProgress(); // сохраняем после покупки
+  }
+
+  // НОВЫЙ МЕТОД: обновление текстов в магазине
+  updateShopTexts() {
+    const upgrades = [
+      { key: 'jumpPower', name: 'Сила прыжка', current: 300 + this.upgradeLevels.jumpPower*20, next: 300 + (this.upgradeLevels.jumpPower+1)*20 },
+      { key: 'gravity', name: 'Гравитация', current: 1300 - this.upgradeLevels.gravity*50, next: 1300 - (this.upgradeLevels.gravity+1)*50 },
+      { key: 'shieldDuration', name: 'Длительность щита', current: 5 + this.upgradeLevels.shieldDuration*2, next: 5 + (this.upgradeLevels.shieldDuration+1)*2 },
+      { key: 'magnetRange', name: 'Радиус магнита', current: 220 + this.upgradeLevels.magnetRange*30, next: 220 + (this.upgradeLevels.magnetRange+1)*30 },
+      { key: 'wagonHP', name: 'Прочность вагонов', current: 1 + this.upgradeLevels.wagonHP, next: 1 + (this.upgradeLevels.wagonHP+1) },
+      { key: 'maxWagons', name: 'Макс. вагонов', current: 12 + this.upgradeLevels.maxWagons*2, next: 12 + (this.upgradeLevels.maxWagons+1)*2 },
+      { key: 'wagonGap', name: 'Дистанция между вагонами', current: 28 - this.upgradeLevels.wagonGap*2, next: 28 - (this.upgradeLevels.wagonGap+1)*2 },
+      { key: 'headHP', name: 'Макс. здоровье', current: 3 + this.upgradeLevels.headHP, next: 3 + (this.upgradeLevels.headHP+1) },
+      { key: 'revival', name: 'Воскрешение', current: this.upgradeLevels.revival, next: this.upgradeLevels.revival+1 },
+    ];
+
+    for (let up of upgrades) {
+      const cost = this.upgradeCosts[up.key];
+      const text = `${up.name}: ${up.current} → ${up.next} | цена: ${cost}`;
+      const item = this.shopUpgradeTexts.find(i => i.key === up.key);
+      if (item) item.textObj.setText(text);
+    }
+
+    // Обновляем баланс
+    const balanceText = this.shopElements.find(el => el.text === `💎 ${this.crystals - this.upgradeCosts[key] + this.upgradeCosts[key]}`); // костыль, но проще перезаписать
+    // Лучше найти по содержимому, но для простоты предположим, что это второй элемент после title
+    if (this.shopElements[2] && this.shopElements[2].text) {
+      this.shopElements[2].setText(`💎 ${this.crystals}`);
+    }
+  }
+
+  spawnGate() {
+    if (this.dead) return;
+    
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    const textureIndex = Math.min(this.level, this.gateTextures.length - 1);
+    const gateTexture = this.gateTextures[textureIndex];
+
+    const gap = this.gapSize + Phaser.Math.Between(-15, 15);
+    const centerY = Phaser.Math.Between(120, h - 120);
+    const topY = centerY - gap / 2;
+    const bottomY = centerY + gap / 2;
+    const x = w;
+
+    const topPipe = this.physics.add.image(x, topY, gateTexture)
+      .setOrigin(0.5, 1)
+      .setImmovable(true)
+      .setScale(1, Math.max(0.2, topY / 400))
+      .setVelocityX(-this.currentSpeed);
+    topPipe.body.setAllowGravity(false);
+
+    const bottomPipe = this.physics.add.image(x, bottomY, gateTexture)
+      .setOrigin(0.5, 0)
+      .setImmovable(true)
+      .setScale(1, Math.max(0.2, (h - bottomY) / 400))
+      .setVelocityX(-this.currentSpeed);
+    bottomPipe.body.setAllowGravity(false);
+
+    [topPipe, bottomPipe].forEach(pipe => {
+      pipe.setScale(1, 0.01);
+      this.tweens.add({
+        targets: pipe,
+        scaleY: pipe.scaleY,
+        duration: 300,
+        ease: 'Back.out',
+      });
+    });
+
+    if (this.level >= 2 && Math.random() < 0.4) {
+      const moveDistance = Phaser.Math.Between(-50, 50);
+      // Сохраняем tween, чтобы потом остановить при уничтожении
+      const tween = this.tweens.add({
+        targets: [topPipe, bottomPipe],
+        y: `+=${moveDistance}`,
+        duration: 1200,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+      pipe.tween = tween; // привязываем к объекту
+    }
+
+    this.pipes.push(topPipe, bottomPipe);
+    this.physics.add.collider(this.player, topPipe, this.hitPipe, null, this);
+    this.physics.add.collider(this.player, bottomPipe, this.hitPipe, null, this);
+
+    const zone = this.add.zone(x + 60, h / 2, 12, h);
+    this.physics.add.existing(zone);
+    zone.body.setAllowGravity(false);
+    zone.body.setImmovable(true);
+    zone.body.setVelocityX(-this.currentSpeed);
+    zone.body.setSize(12, h);
+    this.physics.add.overlap(this.player, zone, () => this.passGate(zone), null, this);
+    this.scoreZones.push(zone);
+
+    this.spawnCoin(x, centerY);
+  }
+
+  hitPipe(player, pipe) {
+    if (this.shieldActive) {
+      const emitter = this.add.particles(pipe.x, pipe.y, 'spark', {
+        speed: 150,
+        scale: { start: 0.4, end: 0 },
+        alpha: { start: 0.8, end: 0 },
+        lifespan: 300,
+        quantity: 15,
+        blendMode: Phaser.BlendModes.ADD,
+      });
+      emitter.explode(15);
+      return;
+    } else {
+      // Уменьшаем здоровье головы
+      this.headHP--;
+      this.updateHearts();
+      this.cameras.main.shake(100, 0.003);
+      this.playSound(this.tapSound); // звук удара
+      if (this.headHP <= 0) {
+        this.handleDeath();
+      } else {
+        // Кратковременная неуязвимость? Можно добавить
+        this.player.setTint(0xff8888);
+        this.time.delayedCall(500, () => this.player.clearTint());
+      }
+    }
+  }
+
+  passGate(zone) {
+    if (zone.passed) return;
+    zone.passed = true;
+    
+    this.score += 1 * this.bonusMultiplier;
+    this.scoreText.setText(String(this.score));
+    this.meters += 10;
+    this.meterText.setText(`📏 ${Math.floor(this.meters)} м`);
+    this.updateLevel();
+    
+    if (this.score > this.best) {
+      this.best = this.score;
+      localStorage.setItem('skypulse_best', String(this.best));
+      this.bestText.setText(`🏆 ${this.best}`);
+    }
+    
+    this.tweens.add({
+      targets: this.scoreText,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 100,
+      yoyo: true,
+      ease: 'Quad.out',
+    });
+    
+    this.cameras.main.shake(20, 0.001);
+    try {
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.('light');
+    } catch {}
+  }
+
+  handleDeath() {
+    // Воскрешение
+    if (this.upgradeLevels.revival > 0 && !this.dead) {
+      this.upgradeLevels.revival--;
+      this.headHP = this.maxHeadHP;
+      this.updateHearts();
+      this.cameras.main.flash(300, 100, 255, 100, false);
+      this.playSound(this.reviveSound);
+      // Показываем сообщение
+      const msg = this.add.text(this.player.x, this.player.y - 50, 'ВОСКРЕШЕНИЕ!', {
+        fontSize: '24px',
+        color: '#ffaa00',
+        fontStyle: 'bold',
+        stroke: '#000',
+        strokeThickness: 3
+      }).setOrigin(0.5).setDepth(15);
+      this.tweens.add({
+        targets: msg,
+        y: msg.y - 80,
+        alpha: 0,
+        duration: 1500,
+        onComplete: () => msg.destroy()
+      });
+      this.saveProgress(); // сохраняем изменение revival
+      return;
+    }
+
+    if (this.dead) return;
+    this.dead = true;
+    this.trailEmitter.stop();
+    if (this.bgMusic) this.bgMusic.stop();
+
+    this.mainTimers.forEach(timer => timer && timer.remove());
+    if (this.bonusTimer) this.bonusTimer.remove();
+
+    this.physics.pause();
+    this.cameras.main.shake(300, 0.005);
+    this.cameras.main.flash(300, 255, 100, 100, false);
+    this.player.setTint(0xff0000);
+    this.player.setAngle(90);
+
+    const emitter = this.add.particles(this.player.x, this.player.y, 'flare', {
+      speed: 250,
+      scale: { start: 0.8, end: 0 },
+      alpha: { start: 1, end: 0 },
+      lifespan: 500,
+      quantity: 40,
+      blendMode: Phaser.BlendModes.ADD,
+    });
+    emitter.explode(40);
+
+    this.showGameOver();
+
+    // Отправляем результат в Telegram бота
+    if (window.Telegram?.WebApp) {
+      const data = JSON.stringify({
+        score: this.score,
+        level: this.level + 1,
+        wagons: this.wagons.length,
+        meters: Math.floor(this.meters)
+      });
+      window.Telegram.WebApp.sendData(data);
+    }
+
+    try {
+      window.Telegram?.WebApp?.HapticFeedback?.notificationOccurred?.('error');
+    } catch {}
+  }
+
+  showGameOver() {
+    this.gameOverSubtitle.setText(
+      `Счёт: ${this.score}\n` +
+      `Рекорд: ${this.best}\n` +
+      `💎 ${this.crystals}\n` +
+      `📏 ${Math.floor(this.meters)} м\n` +
+      `🚃 Вагонов: ${this.wagons.length}/${this.maxWagons}`
+    );
+    this.gameOverBox.setVisible(true);
+    this.gameOverBox.setScale(0.9);
+    this.gameOverBox.setAlpha(0);
+    this.tweens.add({
+      targets: this.gameOverBox,
+      scaleX: 1,
+      scaleY: 1,
+      alpha: 1,
+      duration: 400,
+      ease: 'Back.out',
+    });
+  }
+
+  cleanupObjects() {
+    this.pipes = this.pipes.filter(p => {
+      if (p.x < -150) {
+        // Останавливаем tween, если он есть
+        if (p.tween) p.tween.stop();
+        p.destroy();
+        return false;
+      }
+      return true;
+    });
+
+    this.coins = this.coins.filter(c => {
+      if (!c.active || c.x < -100) {
+        c.destroy();
+        return false;
+      }
+      return true;
+    });
+
+    this.scoreZones = this.scoreZones.filter(z => {
+      if (z.x < -60) {
+        z.destroy();
+        return false;
+      }
+      return true;
+    });
+
+    // Удаляем станцию, если ушла за экран
+    if (this.stationPlanet && this.stationPlanet.x < -200) {
+      if (this.stationPlanet.label) this.stationPlanet.label.destroy();
+      this.stationPlanet.destroy();
+      this.stationPlanet = null;
+      this.stationActive = false;
+    }
+  }
+
+  // Обновляем методы фона с параметром delta
+  updateStars(delta) {
+    const w = this.scale.width;
+    const h = this.scale.height;
+    const factor = this.started && !this.dead ? 1 : 0.3;
+    const dt = delta / 1000; // в секунды
+    
+    for (let s of this.stars) {
+      s.sprite.x -= s.speed * factor * dt;
+      if (s.sprite.x < -10) {
+        s.sprite.x = w + Phaser.Math.Between(5, 50);
+        s.sprite.y = Phaser.Math.Between(0, h);
+      }
+    }
+  }
+
+  updatePlanets(delta) {
+    const w = this.scale.width;
+    const factor = this.started && !this.dead ? 0.2 : 0.05;
+    const dt = delta / 1000;
+    
+    for (let p of this.planets) {
+      p.sprite.x -= p.speed * factor * dt;
+      if (p.sprite.x < -300) {
+        p.sprite.x = w + Phaser.Math.Between(400, 2000);
+        p.sprite.y = Phaser.Math.Between(50, this.scale.height - 50);
+      }
+    }
+  }
+
+  updateShips(delta) {
+    const w = this.scale.width;
+    const factor = this.started && !this.dead ? 0.3 : 0.1;
+    const dt = delta / 1000;
+    
+    for (let s of this.ships) {
+      s.sprite.x -= s.speed * factor * dt;
+      if (s.sprite.x < -200) {
+        s.sprite.x = w + Phaser.Math.Between(300, 1500);
+        s.sprite.y = Phaser.Math.Between(50, this.scale.height - 50);
+      }
+    }
+  }
+
+  updateAsteroids(delta) {
+    const w = this.scale.width;
+    const factor = this.started && !this.dead ? 0.3 : 0.1;
+    const dt = delta / 1000;
+    
+    for (let a of this.asteroids) {
+      a.sprite.x -= a.speed * factor * dt;
+      if (a.sprite.x < -200) {
+        a.sprite.x = w + Phaser.Math.Between(300, 1500);
+        a.sprite.y = Phaser.Math.Between(50, this.scale.height - 50);
+      }
+    }
+  }
+
+  onResize() {
+    const w = this.scale.width;
+    const h = this.scale.height;
+
+    this.scoreText.setPosition(w / 2, 56);
+    this.crystalText.setPosition(w - 20, 24);
+    this.meterText.setPosition(20, h - 80);
+    if (this.bonusText) this.bonusText.setPosition(w - 20, 70);
+    this.levelText.setPosition(w / 2, h / 2 - 100);
+
+    if (this.pauseButton) this.pauseButton.setPosition(w - 40, h - 40);
+    if (this.shopButton) this.shopButton.setPosition(w - 120, h - 40);
+    if (this.wagonCountText) this.wagonCountText.setPosition(w - 150, h - 40);
+    if (this.progressBarBg) {
+      this.progressBarBg.setPosition(w / 2, h - 50);
+      this.progressBar.setPosition(w / 2 - 100, h - 50);
+      this.progressBarText.setPosition(w / 2, h - 50);
+    }
+
+    if (!this.started) {
+      this.introText.setPosition(w / 2, h * 0.40);
+      this.coinTipsText.setPosition(w / 2, h * 0.55);
+    }
+
+    this.gameOverBox.setPosition(w / 2, h / 2);
+  }
+}
+
+// =========================================================================
+// Конфигурация игры
+// =========================================================================
+const config = {
+  type: Phaser.AUTO,
+  parent: 'app',
+  width: 390,
+  height: 844,
+  backgroundColor: '#030712',
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    fullscreenTarget: 'parent',
+  },
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { y: 1300 },
+      debug: false,
+      maxEntities: 500,
+    },
+  },
+  render: {
+    pixelArt: false,
+    antialias: true,
+  },
+  scene: [BootScene, PlayScene],
+};
+
+new Phaser.Game(config);
