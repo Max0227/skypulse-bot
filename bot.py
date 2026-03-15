@@ -1,159 +1,318 @@
 import asyncio
 import logging
+import os
+import sys
 import json
 import sqlite3
-import os
+from datetime import datetime
+from typing import Optional
+
 from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from aiogram.types import (
+    InlineKeyboardMarkup, InlineKeyboardButton,
+    ReplyKeyboardMarkup, KeyboardButton,
+    WebAppInfo
+)
+from aiogram.utils.markdown import hbold, hlink, hcode
 from dotenv import load_dotenv
 
+# Загружаем переменные окружения
 load_dotenv()
 
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# Получаем токен и URL игры
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 GAME_URL = os.getenv("GAME_URL", "https://skypulse.vercel.app")
 
-bot = Bot(token=BOT_TOKEN)
+if not BOT_TOKEN:
+    logger.error("BOT_TOKEN не задан!")
+    sys.exit(1)
+
+# Инициализация бота и диспетчера
+bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.MARKDOWN)
 dp = Dispatcher()
 
-# Инициализация базы данных
+# ----------------------------------------------------------------------
+# База данных SQLite
+# ----------------------------------------------------------------------
+DB_PATH = "skypulse.db"
+
 def init_db():
-    conn = sqlite3.connect('scores.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS scores
-                 (user_id INTEGER PRIMARY KEY,
-                  username TEXT,
-                  first_name TEXT,
-                  score INTEGER,
-                  level INTEGER,
-                  wagons INTEGER,
-                  meters INTEGER,
-                  timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)''')
+    """Создаёт таблицу users, если её нет."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY,
+            username TEXT,
+            first_name TEXT,
+            best_score INTEGER DEFAULT 0,
+            best_level INTEGER DEFAULT 0,
+            total_meters INTEGER DEFAULT 0,
+            total_coins INTEGER DEFAULT 0,
+            games_played INTEGER DEFAULT 0,
+            last_play DATE
+        )
+    """)
     conn.commit()
     conn.close()
 
 init_db()
 
-RULES_TEXT = """
-🌟 **SkyPulse: Пятый элемент** 🌟
+def update_user_stats(user_id: int, username: str, first_name: str, score: int, level: int, meters: int):
+    """Обновляет статистику пользователя в БД."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    # Получаем текущие данные
+    cur.execute("SELECT best_score, best_level, total_meters, total_coins, games_played FROM users WHERE user_id = ?", (user_id,))
+    row = cur.fetchone()
+    today = datetime.now().date().isoformat()
 
-Ты управляешь жёлтым такси из будущего. Собирай монеты, уклоняйся от препятствий и увеличивай свой состав!
+    if row:
+        best_score, best_level, total_meters, total_coins, games_played = row
+        new_best_score = max(best_score, score)
+        new_best_level = max(best_level, level)
+        new_total_meters = total_meters + meters
+        # Временно монеты не суммируем, так как не передаются. Можно добавить позже.
+        new_games_played = games_played + 1
+        cur.execute("""
+            UPDATE users SET
+                username = ?, first_name = ?,
+                best_score = ?, best_level = ?,
+                total_meters = ?, games_played = ?,
+                last_play = ?
+            WHERE user_id = ?
+        """, (username, first_name, new_best_score, new_best_level,
+              new_total_meters, new_games_played, today, user_id))
+    else:
+        cur.execute("""
+            INSERT INTO users
+            (user_id, username, first_name, best_score, best_level, total_meters, games_played, last_play)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, username, first_name, score, level, meters, 1, today))
 
-🚖 **Управление:** тап по экрану – прыжок.
-🪙 **Монеты:** золотые дают +1, цветные дают бонусы.
-🚃 **Вагоны:** каждые 15 монет добавляют вагон. Чем длиннее состав, тем сложнее, но и зрелищнее.
-💎 **Магазин:** улучшай свой корабль за монеты.
-🏆 **Таблица лидеров:** соревнуйся с друзьями!
+    conn.commit()
+    conn.close()
 
-Команды:
-/start – начать
-/rules – правила
-/top – топ-100 игроков
-/mybest – личный рекорд
+def get_top_users(limit: int = 10):
+    """Возвращает топ игроков по best_score."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT username, first_name, best_score, best_level, total_meters
+        FROM users
+        ORDER BY best_score DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+def get_user_stats(user_id: int):
+    """Возвращает статистику конкретного пользователя."""
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT best_score, best_level, total_meters, games_played, last_play
+        FROM users WHERE user_id = ?
+    """, (user_id,))
+    row = cur.fetchone()
+    conn.close()
+    return row
+
+# ----------------------------------------------------------------------
+# Текст правил (без изменений)
+# ----------------------------------------------------------------------
+RULES_TEXT = f"""
+{hbold('🌟 Добро пожаловать в SkyPulse: Пятый элемент! 🌟')}
+
+Ты управляешь легендарным жёлтым такси из будущего. Твоя цель – пролететь как можно дальше, собирая монеты и уклоняясь от препятствий.
+
+{hbold('🚖 Как играть:')}
+• Нажимай на экран, чтобы такси подпрыгивало.
+• Пролетая через ворота, получаешь очки и продвигаешься по уровням.
+• Собирай монеты (золотые и цветные), чтобы увеличивать свой состав.
+• Каждые 15 монет к твоему такси пристыковывается новый вагончик! Максимум – 12 вагонов (можно увеличить в магазине).
+• Вагончики делают игру сложнее, но и зрелищнее. Если вагон врежется в препятствие – он отвалится.
+• Головное такси уязвимо: у него есть здоровье (сердечки). При потере всех сердечек – конец игры.
+
+{hbold('🌈 Бонусные монетки:')}
+• 🔴 Красная – ускорение (x2 к очкам)
+• 🔵 Синяя – щит (временная неуязвимость)
+• 🟢 Зелёная – магнит (притягивает монеты)
+• 🟣 Фиолетовая – замедление времени
+
+{hbold('🏆 Прогрессия:')}
+С каждым уровнем скорость растёт, а проходы сужаются. Каждые 10 уровней появляется планета-станция – коснись её, чтобы получить бонус за каждый вагон и открыть магазин.
+
+{hbold('🎮 Управление:')}
+Просто тапай по экрану – такси взлетает. Управляй ритмом, чтобы пройти между препятствиями.
+
+{hbold('📊 Таблица лидеров:')}
+Используй команду /top, чтобы увидеть лучших игроков.
 """
 
+# ----------------------------------------------------------------------
+# Клавиатура для быстрого доступа
+# ----------------------------------------------------------------------
+def get_main_keyboard():
+    """Возвращает Reply-клавиатуру с основными командами."""
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🚀 Играть"), KeyboardButton(text="📊 Топ")],
+            [KeyboardButton(text="📜 Правила"), KeyboardButton(text="🏆 Мой рекорд")]
+        ],
+        resize_keyboard=True
+    )
+    return keyboard
+
+# ----------------------------------------------------------------------
+# Команда /start
+# ----------------------------------------------------------------------
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    """Приветствие с кнопкой запуска игры."""
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚀 Играть в SkyPulse", web_app=WebAppInfo(url=GAME_URL))]
         ]
     )
     await message.answer(
-        f"Привет, {message.from_user.first_name or 'пилот'}! 👋\n"
+        f"Привет, {message.from_user.first_name or 'пилот'}! 👋\n\n"
         "Это игра SkyPulse – такси-поезд в стиле Пятого элемента.\n"
-        "Нажми на кнопку, чтобы начать, или /rules для правил.",
+        "Нажми на кнопку, чтобы начать, или используй /rules для подробных правил.",
         reply_markup=keyboard
     )
+    # Отправляем клавиатуру
+    await message.answer("Выбери действие:", reply_markup=get_main_keyboard())
 
+# ----------------------------------------------------------------------
+# Команда /rules
+# ----------------------------------------------------------------------
 @dp.message(Command("rules"))
+@dp.message(lambda msg: msg.text and msg.text.lower() == "📜 правила")
 async def cmd_rules(message: types.Message):
-    await message.answer(RULES_TEXT, parse_mode="Markdown")
+    """Отправляет правила игры."""
+    await message.answer(RULES_TEXT, parse_mode=ParseMode.MARKDOWN)
 
+# ----------------------------------------------------------------------
+# Команда /game (и кнопка "Играть")
+# ----------------------------------------------------------------------
+@dp.message(Command("game"))
+@dp.message(lambda msg: msg.text and msg.text.lower() == "🚀 играть")
+async def cmd_game(message: types.Message):
+    """Кнопка для игры."""
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚖 Играть сейчас", web_app=WebAppInfo(url=GAME_URL))]
+        ]
+    )
+    await message.answer("Нажми кнопку, чтобы запустить игру:", reply_markup=keyboard)
+
+# ----------------------------------------------------------------------
+# Команда /top
+# ----------------------------------------------------------------------
 @dp.message(Command("top"))
+@dp.message(lambda msg: msg.text and msg.text.lower() == "📊 топ")
 async def cmd_top(message: types.Message):
-    conn = sqlite3.connect('scores.db')
-    c = conn.cursor()
-    c.execute('''SELECT username, first_name, score, level, wagons, meters 
-                 FROM scores 
-                 ORDER BY score DESC 
-                 LIMIT 100''')
-    rows = c.fetchall()
-    conn.close()
-    
-    if not rows:
-        await message.answer("🏆 Пока нет рекордов. Сыграй и стань первым!")
+    """Показывает топ-10 игроков."""
+    top = get_top_users(10)
+    if not top:
+        await message.answer("Пока нет ни одного игрока в таблице лидеров.")
         return
-    
-    text = "🏆 **ТОП-100 ИГРОКОВ** 🏆\n\n"
-    for i, row in enumerate(rows, 1):
-        name = row[1] or row[0] or "Аноним"
-        medal = ""
-        if i == 1:
-            medal = "🥇 "
-        elif i == 2:
-            medal = "🥈 "
-        elif i == 3:
-            medal = "🥉 "
-        elif i <= 10:
-            medal = "⭐ "
-        text += f"{medal}{i}. {name} — {row[2]} очков (ур.{row[3]}, 🚃 {row[4]}, 📏 {row[5]}м)\n"
-        if i == 50:
-            text += "\n... и ещё 50"
-            break
-    await message.answer(text, parse_mode="Markdown")
 
+    text = "🏆 *ТОП-10 ИГРОКОВ* 🏆\n\n"
+    for i, (username, first_name, best_score, best_level, total_meters) in enumerate(top, 1):
+        name = username or first_name or "Аноним"
+        text += f"{i}. {name} — {best_score} очков (ур. {best_level}, {total_meters} м)\n"
+
+    await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+
+# ----------------------------------------------------------------------
+# Команда /mybest
+# ----------------------------------------------------------------------
 @dp.message(Command("mybest"))
+@dp.message(lambda msg: msg.text and msg.text.lower() == "🏆 мой рекорд")
 async def cmd_mybest(message: types.Message):
+    """Показывает личный рекорд пользователя."""
     user_id = message.from_user.id
-    conn = sqlite3.connect('scores.db')
-    c = conn.cursor()
-    c.execute('''SELECT score, level, wagons, meters, timestamp 
-                 FROM scores WHERE user_id = ?''', (user_id,))
-    row = c.fetchone()
-    conn.close()
-    
-    if not row:
-        await message.answer("📊 У тебя пока нет сохранённых результатов. Сыграй и возвращайся!")
-    else:
-        await message.answer(
-            f"📊 **Твой лучший результат**\n\n"
-            f"🎯 Очки: {row[0]}\n"
-            f"📊 Уровень: {row[1]}\n"
-            f"🚃 Вагонов: {row[2]}\n"
-            f"📏 Метров: {row[3]}\n"
-            f"📅 Дата: {row[4][:10]}",
-            parse_mode="Markdown"
-        )
+    stats = get_user_stats(user_id)
+    if not stats:
+        await message.answer("Вы ещё не играли. Сыграйте, чтобы появилась статистика!")
+        return
 
+    best_score, best_level, total_meters, games_played, last_play = stats
+    text = (
+        f"📊 *Ваша статистика*\n\n"
+        f"🏆 Лучший счёт: {best_score}\n"
+        f"🌟 Лучший уровень: {best_level}\n"
+        f"📏 Всего метров: {total_meters}\n"
+        f"🎮 Сыграно игр: {games_played}\n"
+        f"📅 Последняя игра: {last_play}"
+    )
+    await message.answer(text, parse_mode=ParseMode.MARKDOWN)
+
+# ----------------------------------------------------------------------
+# Обработчик данных из WebApp
+# ----------------------------------------------------------------------
 @dp.message()
 async def handle_webapp_data(message: types.Message):
-    if message.web_app_data:
-        data = json.loads(message.web_app_data.data)
-        user = message.from_user
-        
-        conn = sqlite3.connect('scores.db')
-        c = conn.cursor()
-        c.execute('SELECT score FROM scores WHERE user_id = ?', (user.id,))
-        old = c.fetchone()
-        
-        if not old or data['score'] > old[0]:
-            c.execute('''INSERT OR REPLACE INTO scores 
-                         (user_id, username, first_name, score, level, wagons, meters)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                      (user.id, user.username, user.first_name,
-                       data['score'], data['level'], data['wagons'], data['meters']))
-            conn.commit()
-            await message.answer("✅ Новый рекорд сохранён!")
-        else:
-            await message.answer("📊 Результат сохранён (но это не лучше твоего рекорда)")
-        
-        conn.close()
+    """Принимает данные, отправленные из игры."""
+    if not message.web_app_data:
+        return
 
+    try:
+        data = json.loads(message.web_app_data.data)
+    except json.JSONDecodeError:
+        logger.error(f"Невалидный JSON: {message.web_app_data.data}")
+        await message.answer("Ошибка обработки данных. Попробуйте ещё раз.")
+        return
+
+    user = message.from_user
+    logger.info(f"Получены данные от {user.full_name} (id={user.id}): {data}")
+
+    # Извлекаем поля
+    score = data.get('score', 0)
+    level = data.get('level', 1)
+    meters = data.get('meters', 0)
+    # Монеты пока не передаются, можно добавить позже
+
+    # Сохраняем в БД
+    update_user_stats(
+        user_id=user.id,
+        username=user.username,
+        first_name=user.first_name,
+        score=score,
+        level=level,
+        meters=meters
+    )
+
+    await message.answer(
+        f"✅ Результат сохранён!\n"
+        f"Счёт: {score} | Уровень: {level} | Метров: {meters}\n\n"
+        f"Используй /top для просмотра лидеров."
+    )
+
+# ----------------------------------------------------------------------
+# Запуск бота
+# ----------------------------------------------------------------------
 async def main():
+    # Удаляем вебхук
     await bot.delete_webhook(drop_pending_updates=True)
+    logger.info("Бот запущен и готов к работе")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен")
